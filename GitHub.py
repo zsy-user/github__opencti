@@ -50,6 +50,7 @@ class Github:
             affected,
     ):
         self.GHSA_ID = GHSA_ID
+        self.name = f"GITHUB:{GHSA_ID}"
         self.advisory_database_url= advisory_database_url
         self.modified = modified
         self.published = published
@@ -86,10 +87,9 @@ class GitHubConnector:
             else {}
         )
         self.helper = OpenCTIConnectorHelper(config)
-        #helper下面我就不知道写什么了，这里我觉得应该需要根据数据集来写，但我没有exploit-db，0day等的数据集。
-        # self.cve_interval = get_config_variable(
-        #     "TEMPLATE_ATTRIBUTE", ["template", "attribute"], config, True
-        self.githubs = []
+        self.cve_map = {}
+        self.githubs: List[Github] = []
+
 
     def update_data(self):
         #github
@@ -112,29 +112,50 @@ class GitHubConnector:
                     CVSS_severity,
                     cwe_ids,
                     CVSS_base_metrics,
+                    summary,
                     references,
                     description,
                     affected,
-                    description_md
                 ) = row
                 # TODO: description 未定义，可以把 details 之类的作为 description，references opencti 有专门的方式表示，可以不放在 description 里
-                description_md = summary + "\n\n" + description
+                #根据学长您的建议，我把这些属性放入description_md这里
+                description_md = (
+                    f"summary : {summary } \n\n "
+                    f"description: {description} \n\n"
+                    f"advisory_database_url: {advisory_database_url} \n\n "
+                    f"CVSS_score: {CVSS_score} \n\n "
+                    f"cwe_ids: {cwe_ids} \n\n "
+                    f"CVSS_base_metrics: {CVSS_base_metrics} \n\n "
+                    f"affected: {affected} \n\n "
+
+                )
                 json_file = p / "github-data" / f"{GHSA_ID}.json"#json文件，压缩包里面有每条数据的json文件
                 if json_file.exists():
                     with open(json_file, "r") as f2:
                         data = json.load(f2)
                         description_md += f'\n\n ```\n{data["code"]}\n```'
                 # TODO: GitHub 类实例化参数要对应
+                #已经对应，学长可以看一下
                 github = Github(
                     GHSA_ID,
-                    "",
+                    advisory_database_url,
+                    modified,
+                    published,
+                    CVE,
+                    CVSS_score,
+                    CVSS_severity,
+                    cwe_ids,
+                    CVSS_base_metrics,
+                    summary,
+                    references,
+                    description,
+                    affected,
                     description_md,
-                    author,
-                    category,
-                    platform,
-                    datetime.strptime(date, "%Y-%m-%d"),
                 )
                 self.githubs.append(github)
+                CVE: str
+                if CVE != "":
+                    self.cve_map[f"{GHSA_ID}"] = CVE.split(" ")
 
     def send_data(self):
         self.update_data()
@@ -151,34 +172,37 @@ class GitHubConnector:
 
         for github in self.githubs:
             external_reference = stix2.ExternalReference(
-                source_name="Github", url=github.url
+                source_name="Github", url=github.references    #references放入这里
             )
 
-            obj_refs = [author]
+            report_refs = [author]
 
             #TODO: 要链接到 cve_id，可以参考 0day 的写法
+            #根据CVE链接到cve_id
+            # add github relation
+            if github.GHSA_ID in self.cve_map:
+                for cve_id in self.cve_map[github.GHSA_ID]:
+                    report_refs.append(Vulnerability.generate_id(cve_id))
 
-            # add exploit relation
-            # if tweet.vuln_id is not None:
-            #     obj_refs.append(Vulnerability.generate_id(tweet.vuln_id))
-            #
-            # if tweet.software is not None:
-            #     logging.info(f"software: {tweet.software}")
-            #     software = stix2.Software(name=tweet.software)
-            #     obj_refs.append(software)
-            #     bundle.append(software)
-            # else:
-            #     logging.info(f"software: None")
+            if github.software is not None:
+                logging.info(f"software: {github.software}")
+                software = stix2.Software(name=github.software)
+                report_refs.append(software)
+                bundle.append(software)
+            else:
+                logging.info(f"software: None")
 
             report = stix2.Report(
-                # 仅以 name 作为生成 id 的依据
-                id=Report.generate_id(github.summary, datetime(1970, 1, 1)),
-                name=github.summary,
+                id=Report.generate_id(github.name, datetime(1970, 1, 1)),
+                name=github.name,
                 description=github.description_md,
                 created_by_ref=author,
                 external_references=[external_reference],
-                object_refs=obj_refs,
-                published=datetime.now().strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+                object_refs=report_refs,
+                CVSS_severity=github.CVSS_severity, #severity我放入了这里
+                published=github.published,#两个时间，我根据opencti里面，应该是放到这
+                modified=github.modified,
+                published_opencti=datetime.now().strftime("%Y-%m-%dT%H:%M:%S.000Z"),#传进opencti的时间
                 labels=github.labels,
             )
 
@@ -214,7 +238,7 @@ class GitHubConnector:
     ####
     # For details: see
     # https://luatix.notion.site/luatix/Connector-Development-06b2690697404b5ebc6e3556a1385940
-    ####
+    ##
     def run(self):
         # todo loop
         while True:
