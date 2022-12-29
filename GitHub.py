@@ -24,8 +24,8 @@ def get_huawei_software_set():
     global _software_set
     if len(_software_set) != 0:
         return _software_set
-    p = Path(__file__).parent / "cti-spider"
-    with open(p / "huawei-open-source-software.csv", "r") as f:
+    p = Path(__file__).parent 
+    with open(p / "huawei-open-source-software.csv", "r",encoding='utf-8') as f:
         reader = csv.reader(f)
         next(reader)
         for row in reader:
@@ -40,14 +40,14 @@ class Github:
             modified,
             published,
             CVE,
-            CVSS_score,
             CVSS_severity,
             cwe_ids,
             CVSS_base_metrics,
             summary,#标题
             references,
-            description,  #details,用description来表示
             affected,
+            details,
+            description_md
     ):
         self.GHSA_ID = GHSA_ID
         self.name = f"GITHUB:{GHSA_ID}"
@@ -55,21 +55,30 @@ class Github:
         self.modified = modified
         self.published = published
         self.CVE= CVE
-        self.CVSS_score = CVSS_score
         self.CVSS_severity = CVSS_severity
         self.cwe_ids = cwe_ids
-        self.CVSS_base_metrics = CVSS_base_metrics
-        self.summary = summary
+        if CVSS_base_metrics == "":
+            self.CVSS_base_metrics = None
+        else:
+            self.CVSS_base_metrics = CVSS_base_metrics
+        if summary == "":
+            self.summary = None
+        else:
+            self.summary = summary
         self.references = references
-        self.description = description
+        if details == "":
+            self.details = None
+        else:
+            self.details= details
         self.affected = affected
+        self.description_md: str = description_md
 
 
         # 按照华为软件列表打标签
         self.labels = []
         self.software = None
         software_set = get_huawei_software_set()
-        words = self.description_md.split()
+        words = self.details.split()
         for word in words:
             if word in software_set:
                 self.labels = ["HUAWEI"]
@@ -93,11 +102,11 @@ class GitHubConnector:
 
     def update_data(self):
         #github
-        subprocess.run(["git", "pull"], cwd="cti-spider", check=True)
+        # subprocess.run(["git", "pull"], cwd=None, check=True)
 
-        p = Path(__file__).parent / "cti-spider" / "GitHub"
+        p = Path(__file__).parent
 
-        with open(p / "GitHub.csv", "r") as f:
+        with open(p / "GitHub.csv", "r", encoding='utf-8') as f:
             reader = csv.reader(f)
             # read header
             next(reader)
@@ -108,22 +117,22 @@ class GitHubConnector:
                     modified,
                     published,
                     CVE,
-                    CVSS_score,
                     CVSS_severity,
                     cwe_ids,
                     CVSS_base_metrics,
                     summary,
                     references,
-                    description,
+                    details,
                     affected,
+                    description_md
                 ) = row
                 # TODO: description 未定义，可以把 details 之类的作为 description，references opencti 有专门的方式表示，可以不放在 description 里
                 #根据学长您的建议，我把这些属性放入description_md这里
                 description_md = (
                     f"summary : {summary } \n\n "
-                    f"description: {description} \n\n"
+                    f"details: {details} \n\n"
                     f"advisory_database_url: {advisory_database_url} \n\n "
-                    f"CVSS_score: {CVSS_score} \n\n "
+                    f"CVSS_severity: {CVSS_severity} \n\n "
                     f"cwe_ids: {cwe_ids} \n\n "
                     f"CVSS_base_metrics: {CVSS_base_metrics} \n\n "
                     f"affected: {affected} \n\n "
@@ -142,13 +151,12 @@ class GitHubConnector:
                     modified,
                     published,
                     CVE,
-                    CVSS_score,
                     CVSS_severity,
                     cwe_ids,
                     CVSS_base_metrics,
                     summary,
                     references,
-                    description,
+                    details,
                     affected,
                     description_md,
                 )
@@ -199,10 +207,9 @@ class GitHubConnector:
                 created_by_ref=author,
                 external_references=[external_reference],
                 object_refs=report_refs,
-                CVSS_severity=github.CVSS_severity, #severity我放入了这里
                 published=github.published,#两个时间，我根据opencti里面，应该是放到这
                 modified=github.modified,
-                published_opencti=datetime.now().strftime("%Y-%m-%dT%H:%M:%S.000Z"),#传进opencti的时间
+                # published_opencti=datetime.now().strftime("%Y-%m-%dT%H:%M:%S.000Z"),#传进opencti的时间
                 labels=github.labels,
             )
 
