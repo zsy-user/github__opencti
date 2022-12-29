@@ -1,0 +1,11 @@
+opencti:
+  url: 'http://localhost:8080'
+  token: '2f442ca4-2937-47a1-a8e2-f57a1ea3ff89'
+
+connector:
+  id: 'EC1582D1-E018-4F02-85BF-C0CA9A914F57'
+  type: 'EXTERNAL_IMPORT'
+  name: 'ImportGithub'
+  scope: 'identity,vulnerability,malware,report,software' # MIME type or SCO
+  confidence_level: 100 # From 0 (Unknown) to 100 (Fully trusted)
+  log_level: 'info'
